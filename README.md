@@ -1,3 +1,3 @@
 # Celestina
 Student project about image processing
-![alt text(https://github.com/Elinate0/Celestina/blob/main/Painting-of-Lucifer.jpg?raw=true)
+![Alt text](https://github.com/Elinate0/Celestina/blob/main/Painting-of-Lucifer.jpg?raw=true)
