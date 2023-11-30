@@ -141,3 +141,138 @@ valid_generator = train_datagen.flow_from_directory(directory=images_dir,
 STEP_SIZE_TRAIN = train_generator.n//train_generator.batch_size
 STEP_SIZE_VALID = valid_generator.n//valid_generator.batch_size
 print("Total number of batches =", STEP_SIZE_TRAIN, "and", STEP_SIZE_VALID)
+#Çıktısı https://iili.io/JxtgFiQ.png
+
+# Rastgele bir tablo yazdırın 
+fig, axes = plt.subplots(1, 2, figsize=(20,10))
+
+random_artist = random.choice(artists_top_name)
+random_image = random.choice(os.listdir(os.path.join(images_dir, random_artist)))
+random_image_file = os.path.join(images_dir, random_artist, random_image)
+
+# Orijinal Görüntü
+image = plt.imread(random_image_file)
+axes[0].imshow(image)
+axes[0].set_title("An original Image of " + random_artist.replace('_', ' '))
+axes[0].axis('off')
+
+# Dönüştürülen görüntü
+aug_image = train_datagen.random_transform(image)
+axes[1].imshow(aug_image)
+axes[1].set_title("A transformed Image of " + random_artist.replace('_', ' '))
+axes[1].axis('off')
+
+plt.show()
+#Çıktısı https://i.ibb.co/GJk1Sff/image.png
+
+# Load pre-trained model
+base_model = ResNet50(weights='imagenet', include_top=False, input_shape=train_input_shape)
+
+for layer in base_model.layers:
+    layer.trainable = True
+
+
+#Bu kod ResNet50 adlı önceden eğitilmiş bir modeli yükler. weights='imagenet' parametresi, modelin ImageNet veri kümesi üzerinde eğitildiğini belirtir. Bu, modelin görüntü nesnelerini sınıflandırma konusunda iyi eğitildiği anlamına gelir.
+#include_top=False parametresi, modelin üst katmanını dahil etmemesini belirtir. Üst katman, görüntü sınıflarını tahmin etmek için kullanılan katmanlardır. Bu, modelin daha esnek olmasını sağlar, çünkü üst katmanları daha sonra kendi veri kümemiz üzerinde eğitebiliriz.
+#input_shape=train_input_shape parametresi, modelin girdi katmanının şeklini belirtir. Bu modelin veri kümemizdeki görüntülerle çalışacak şekilde yapılandırılmasını sağlar.
+#Son olarak, for layer in base_model.layers: döngüsü, modelin tüm katmanlarını geçer. Her katman için layer.trainable = True ifadesi, katmanın eğitilebilir olmasını sağlar. Bu modelin tüm katmanlarını veri kümemizde eğitmemizi sağlar.
+
+# Sonuna katmanlar ekleyelim
+X = base_model.output
+X = Flatten()(X)
+
+X = Dense(512, kernel_initializer='he_uniform')(X)
+#X = Dropout(0.5)(X) gereksiz
+X = BatchNormalization()(X)
+X = Activation('relu')(X)
+
+X = Dense(16, kernel_initializer='he_uniform')(X)
+#X = Dropout(0.5)(X) gereksiz
+X = BatchNormalization()(X)
+X = Activation('relu')(X)
+
+output = Dense(n_classes, activation='softmax')(X)
+
+model = Model(inputs=base_model.input, outputs=output)
+#ResNet50'in(önceden eğitilmiş model yukarıda açıklamıştım) sonuna yeni katmanlar ekler. Bu transfer öğrenme adı verilen yaygın bir tekniktir ve önceden eğitilmiş bir modeli yeni bir görev için ince ayarlamak için kullanılır.(wikipedia'dan aldım açıklamayı)
+
+optimizer = Adam(lr=0.0001) #Adam optimizatörünü kullanıyoruz ve öğrenme oranını 0.0001 olarak ayarlıyoruz. 
+#Adam optimizatörü, stochastic gradient descent (SGD) tabanlı bir optimizatördür. SGD bir modelin ağırlıklarını güncellemek için gradyanları kullanır. Adam gradyanların hem momentumunu hem de RMSProp'un hızını hesaba katarak SGD'yi iyileştirmeyi amaçlar.(wikipedia'dan aldım açıklamayı)
+model.compile(loss='categorical_crossentropy',
+              optimizer=optimizer, 
+              metrics=['accuracy'])
+######################## Önemli ########################
+n_epoch = 10
+
+early_stop = EarlyStopping(monitor='val_loss', patience=20, verbose=1, 
+                           mode='auto', restore_best_weights=True)
+
+reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, 
+                              verbose=1, mode='auto')
+
+#EarlyStopping çağrı geri bildirimi, doğrulama kümesi üzerindeki kaybı ölçen val_loss metriğini izler. val_loss patience epoch boyunca iyileşmezse, eğitim süreci durdurulur. Bu modelin eğitim verilerine aşırı uymasını önler ve genelleştirme performansını iyileştirmeye yardımcı olur.
+
+#ReduceLROnPlateau çağrı geri bildirimi, val_loss metriğini de izler. val_loss patience epoch boyunca iyileşmezse, öğrenme oranı factor faktörü ile azaltılır. Bu modelin yerel minimumlardan kurtulmasına ve daha iyi bir çözüm bulmasına yardımcı olabilir.
+######################## Önemli ########################
+
+# Artık train ediyoruz
+history1 = model.fit_generator(generator=train_generator, steps_per_epoch=STEP_SIZE_TRAIN,
+                              validation_data=valid_generator, validation_steps=STEP_SIZE_VALID,
+                              epochs=n_epoch,
+                              shuffle=True,
+                              verbose=1,
+                              callbacks=[reduce_lr],
+                              use_multiprocessing=True,
+                              workers=16,
+                              class_weight=class_weights
+                             )
+#Çıktısı https://i.ibb.co/V37b28W/image.png
+
+
+
+######################### Test için ########################
+for layer in model.layers:
+    layer.trainable = False
+
+for layer in model.layers[:50]:
+    layer.trainable = True
+
+optimizer = Adam(lr=0.0001)
+
+model.compile(loss='categorical_crossentropy',
+              optimizer=optimizer, 
+              metrics=['accuracy'])
+
+n_epoch = 50
+history2 = model.fit_generator(generator=train_generator, steps_per_epoch=STEP_SIZE_TRAIN,
+                              validation_data=valid_generator, validation_steps=STEP_SIZE_VALID,
+                              epochs=n_epoch,
+                              shuffle=True,
+                              verbose=1,
+                              callbacks=[reduce_lr, early_stop],
+                              use_multiprocessing=True,
+                              workers=16,
+                              class_weight=class_weights
+                             )for layer in model.layers:
+    layer.trainable = False
+
+for layer in model.layers[:50]:
+    layer.trainable = True
+
+optimizer = Adam(lr=0.0001)
+
+model.compile(loss='categorical_crossentropy',
+              optimizer=optimizer, 
+              metrics=['accuracy'])
+
+n_epoch = 50
+history2 = model.fit_generator(generator=train_generator, steps_per_epoch=STEP_SIZE_TRAIN,
+                              validation_data=valid_generator, validation_steps=STEP_SIZE_VALID,
+                              epochs=n_epoch,
+                              shuffle=True,
+                              verbose=1,
+                              callbacks=[reduce_lr, early_stop],
+                              use_multiprocessing=True,
+                              workers=16,
+                              class_weight=class_weights
+                             )
